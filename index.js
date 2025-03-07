@@ -50,17 +50,21 @@ app.post("/start-lambda", async (req, res) => {
     const { process, data } = req.body;
     const { channelId } = req.query;
     const { processmodal } = req.query;
+    const { tileID } = req.query;
+    let tempChannelId;
+    let tempProcess;
 
     if (processmodal === "true") {
       console.log("Received process and channelId:", process, channelId);
-      res.status(200).send(channelId);
-      tempChannelId = channelId;
+      tempChannelId = generateUniqueChannelId();
       tempProcess = process;
-      sendLargeData(req.body, channelId);
+      console.log("unique channel id", tempChannelId);
+      sendLargeData(req.body, tempChannelId);
+      res.status(200).send(tempChannelId);
     } else if (processmodal === "false") {
-      const tileID = data.output.tileID;
+      tempProcess = process;
+      tempChannelId = channelId;
       if (tileID && tempProcess && tempChannelId) {
-        res.status(200).send("TileID processed successfully");
         const currentStep = tempProcess.sequence[tileID];
         const nextStepId = nextSteps(tileID, currentStep.out);
 
@@ -72,9 +76,9 @@ app.post("/start-lambda", async (req, res) => {
           previousStep: tileID,
           lambda: true,
         };
-        await sendPubnubMessage(channelId, message);
+        await sendPubnubMessage(tempChannelId, message);
         let messageData = {
-          channel: channelId, // Fixed channelId issue
+          channel: tempChannelId, // Fixed tempChannelId issue
         };
         if (currentStep.breakpoint === "true") {
           console.log("breakpoint 2", currentStep.breakpoint);
@@ -103,9 +107,9 @@ app.post("/start-lambda", async (req, res) => {
             joinArray: [],
             stepArray: [],
           };
-          if (channelId) {
-            await sendPubnubMessage(channelId, breakpointMessage);
-            await sendPubnubMessage(channelId, breakpointMessageTwo);
+          if (tempChannelId) {
+            await sendPubnubMessage(tempChannelId, breakpointMessage);
+            await sendPubnubMessage(tempChannelId, breakpointMessageTwo);
           }
 
           return "Flow Break";
@@ -129,8 +133,8 @@ app.post("/start-lambda", async (req, res) => {
 
           console.log("messagetosend", messagetosend);
 
-          if (channelId) {
-            await sendPubnubMessage(channelId, messagetosend);
+          if (tempChannelId) {
+            await sendPubnubMessage(tempChannelId, messagetosend);
           }
 
           let breakpointMessage = {
@@ -156,16 +160,16 @@ app.post("/start-lambda", async (req, res) => {
 
           console.log("breakpointMessage", breakpointMessage);
 
-          if (channelId) {
-            await sendPubnubMessage(channelId, breakpointMessage);
-            await sendPubnubMessage(channelId, breakpointMessageTwo);
+          if (tempChannelId) {
+            await sendPubnubMessage(tempChannelId, breakpointMessage);
+            await sendPubnubMessage(tempChannelId, breakpointMessageTwo);
           }
 
           console.log(
             "Breakpoint is false, sending message to Lambda:",
             messageData
           );
-          console.log("channel id before msg send", channelId);
+          console.log("channel id before msg send", tempChannelId);
 
           const response = fetch(
             "https://l4de4qu2susik7odbq3kq6fe3i0soapi.lambda-url.us-east-1.on.aws/",
@@ -178,9 +182,10 @@ app.post("/start-lambda", async (req, res) => {
 
           console.log("Message sent:", response);
 
-          if (channelId) {
-            await sendPubnubMessage(channelId, message);
+          if (tempChannelId) {
+            await sendPubnubMessage(tempChannelId, message);
           }
+          res.status(200).send("TileID processed successfully");
         }
       } else {
         res.status(400).send("Invalid tileID or missing process/channelId");
@@ -194,6 +199,12 @@ app.post("/start-lambda", async (req, res) => {
   }
 });
 
+function generateUniqueChannelId() {
+  // Logic to generate a unique channel ID
+  const randomId = Math.random().toString(36).substr(2, 9); // Generate a random alphanumeric string
+  const num = Math.floor(Math.random() * Date.now()).toString(16);
+  return randomId + num; // Concatenate the timestamp and random string
+}
 function sendLargeData(data, channel) {
   const maxChunkSize = 5 * 1024; // Set the maximum chunk size (e.g., 30KB)
   const jsonStr = JSON.stringify(data);
@@ -228,6 +239,7 @@ function sendPubnubMessage(channel, message) {
     }
   );
 }
+
 app.listen(port, () => {
   console.log(`Server running at http://localhost:${port}/`);
 });
