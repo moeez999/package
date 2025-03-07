@@ -44,27 +44,25 @@ const port = 5000;
 app.use(express.json());
 app.use(bodyParser.json());
 app.use(cors());
+
 app.post("/start-lambda", async (req, res) => {
   try {
     const { process, data } = req.body;
     const { channelId } = req.query;
+    const { processmodal } = req.query;
 
-    if (process && channelId) {
+    if (processmodal === "true") {
       console.log("Received process and channelId:", process, channelId);
-      tempProcess = process;
-      tempChannelId = channelId;
       res.status(200).send(channelId);
+      tempChannelId = channelId;
+      tempProcess = process;
       sendLargeData(req.body, channelId);
-    } else if (data && data.output && data.output.tileID) {
+    } else if (processmodal === "false") {
       const tileID = data.output.tileID;
-
       if (tileID && tempProcess && tempChannelId) {
         res.status(200).send("TileID processed successfully");
         const currentStep = tempProcess.sequence[tileID];
-
         const nextStepId = nextSteps(tileID, currentStep.out);
-        console.log("Received tileID:", tileID);
-        console.log("Next step:", nextStepId);
 
         const message = {
           processInfoName: tempProcess.info.name,
@@ -78,19 +76,111 @@ app.post("/start-lambda", async (req, res) => {
         let messageData = {
           channel: channelId, // Fixed channelId issue
         };
-        const response = fetch(
-          "https://r54pmp47dckq3wv625n6vkenf40incup.lambda-url.us-east-1.on.aws/",
-          {
-            method: "POST",
-            body: JSON.stringify(messageData),
-            headers: { "Content-Type": "application/json" },
+        if (currentStep.breakpoint === "true") {
+          console.log("breakpoint 2", currentStep.breakpoint);
+          const now = new Date();
+          const dateTimeString = now
+            .toLocaleString("en-GB", { timeZone: "UTC" })
+            .replace(",", "");
+
+          let breakpointMessage = {
+            dateTimeString: dateTimeString,
+            processInfoName: "",
+            BPMN: "",
+            task: "Break Point",
+            nextStep: "-",
+            previousStep: "-",
+            joinArray: [],
+            stepArray: [],
+          };
+          let breakpointMessageTwo = {
+            dateTimeString: "",
+            processInfoName: "",
+            BPMN: "",
+            task: "Break Point is True",
+            nextStep: "-",
+            previousStep: "-",
+            joinArray: [],
+            stepArray: [],
+          };
+          if (channelId) {
+            await sendPubnubMessage(channelId, breakpointMessage);
+            await sendPubnubMessage(channelId, breakpointMessageTwo);
           }
-        );
 
-        console.log("Message sent:", response);
+          return "Flow Break";
+        } else {
+          console.log("breakpoint 1", currentStep.breakpoint);
+          const now = new Date();
+          const dateTimeString = now
+            .toLocaleString("en-GB", { timeZone: "UTC" })
+            .replace(",", "");
 
-        if (tempChannelId) {
-          await sendPubnubMessage(tempChannelId, message);
+          let messagetosend = {
+            dateTimeString: "",
+            processInfoName: tempProcess.info?.name,
+            BPMN: "Run process",
+            task: "Automation Started",
+            nextStep: "-",
+            previousStep: "-",
+            joinArray: [],
+            stepArray: [nextStepId],
+          };
+
+          console.log("messagetosend", messagetosend);
+
+          if (channelId) {
+            await sendPubnubMessage(channelId, messagetosend);
+          }
+
+          let breakpointMessage = {
+            dateTimeString: dateTimeString,
+            processInfoName: "",
+            BPMN: "",
+            task: "Break Point",
+            nextStep: "-",
+            previousStep: "-",
+            joinArray: [],
+            stepArray: [],
+          };
+          let breakpointMessageTwo = {
+            dateTimeString: dateTimeString,
+            processInfoName: "",
+            BPMN: "",
+            task: "Flow Break Breakpoint is False",
+            nextStep: "-",
+            previousStep: "-",
+            joinArray: [],
+            stepArray: [],
+          };
+
+          console.log("breakpointMessage", breakpointMessage);
+
+          if (channelId) {
+            await sendPubnubMessage(channelId, breakpointMessage);
+            await sendPubnubMessage(channelId, breakpointMessageTwo);
+          }
+
+          console.log(
+            "Breakpoint is false, sending message to Lambda:",
+            messageData
+          );
+          console.log("channel id before msg send", channelId);
+
+          const response = fetch(
+            "https://l4de4qu2susik7odbq3kq6fe3i0soapi.lambda-url.us-east-1.on.aws/",
+            {
+              method: "POST",
+              body: JSON.stringify(messageData),
+              headers: { "Content-Type": "application/json" },
+            }
+          );
+
+          console.log("Message sent:", response);
+
+          if (channelId) {
+            await sendPubnubMessage(channelId, message);
+          }
         }
       } else {
         res.status(400).send("Invalid tileID or missing process/channelId");
